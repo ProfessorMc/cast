@@ -11,14 +11,11 @@ func TestOutputs(t *testing.T) {
 
 	// output channels
 	outputs := make([]chan []byte, 0)
-	for i := 0; i < 5; i++ {
-		outputs = append(outputs, make(chan []byte, 1))
-	}
 
 	// init relay, add channels
 	relay := New(producer)
-	for _, ch := range outputs {
-		relay.Add(ch)
+	for i := 0; i < 10; i++ {
+		outputs = append(outputs, relay.AddReceiver())
 	}
 
 	relay.Start()
@@ -40,14 +37,12 @@ func TestAdding(t *testing.T) {
 
 	producer := make(chan []byte)
 
-	output1 := make(chan []byte, 1)
-	output2 := make(chan []byte, 1)
-
 	relay := New(producer)
 
-	relay.Add(output1)
+	output1 := relay.AddReceiver()
+	output2 := relay.AddReceiver()
+
 	relay.Start()
-	relay.Add(output2)
 
 	producer <- []byte("Testing")
 
@@ -60,5 +55,49 @@ func TestAdding(t *testing.T) {
 	if string(val2) != "Testing" {
 		t.Error("Output channel after Start not recieving value")
 	}
+
+	output3 := relay.AddReceiver()
+	output4 := relay.AddReceiver()
+
+	producer <- []byte("Testing2")
+	val1 = <-output1
+	if string(val1) != "Testing2" {
+		t.Error("Output channel added before start not recieving value")
+	}
+
+	val2 = <-output2
+	if string(val2) != "Testing2" {
+		t.Error("Output channel after Start not recieving value")
+	}
+
+	val3 := <-output3
+	if string(val3) != "Testing2" {
+		t.Error("Output channel added before start not recieving value")
+	}
+
+	val4 := <-output4
+	if string(val4) != "Testing2" {
+		t.Error("Output channel after Start not recieving value")
+	}
+
+}
+
+func TestClose(t *testing.T) {
+	producer := make(chan []byte)
+
+	relay := New(producer)
+
+	output1 := relay.AddReceiver()
+	output2 := relay.AddReceiver()
+	output3 := relay.AddReceiver()
+	output4 := relay.AddReceiver()
+
+	relay.Start()
+	relay.Close()
+	// These will block of close doesn't work.
+	<-output1
+	<-output2
+	<-output3
+	<-output4
 
 }
