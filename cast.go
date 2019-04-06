@@ -8,7 +8,7 @@ import "sync"
 type Relay interface {
 	Start()
 	Close()
-	Add(chan []byte)
+	AddReceiver() chan []byte
 }
 
 type cast struct {
@@ -56,13 +56,14 @@ func (c *cast) Start() {
 
 }
 
-func (c *cast) Add(ch chan []byte) {
+func (c *cast) AddReceiver() chan []byte {
+	ch := make(chan []byte, 1)
 	if c.running {
 		c.add <- ch
 	} else {
 		c.outputs = append(c.outputs, ch)
 	}
-
+	return ch
 }
 
 func (c *cast) Close() {
