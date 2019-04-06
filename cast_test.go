@@ -1,7 +1,10 @@
 package cast
 
 import (
+	"fmt"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestOutputs(t *testing.T) {
@@ -99,5 +102,82 @@ func TestClose(t *testing.T) {
 	<-output2
 	<-output3
 	<-output4
+
+}
+
+// Test produces messages until timeout, passes when 10 messages are received by either the fast or slow client.
+// Producer write messages at 2 Hz
+// Client 1 Received at 1 Hz
+// Client 2 Receives at 4 Hz
+// Note, there will be a lag in receiver and producer during startup so num sent should be higher than the 10 received to kill test.
+// Client 1 should have about half the the messages of Client 2
+func TestSlowReceiverCase(t *testing.T) {
+	producer := make(chan []byte)
+
+	// Test will prodcue at .5 second, will send 5 for test.
+	relay := New(producer)
+
+	// This one will not, sample at .75 second
+	output1 := relay.AddReceiver()
+
+	// This one will be able to keep up, sample at .25 second
+	output2 := relay.AddReceiver()
+	relay.Start()
+	t.Log("starting test producer")
+	numMessageSent := 0
+	go func() {
+		for {
+			time.Sleep(500 * time.Millisecond)
+			//t.Log("Sending Message")
+			producer <- []byte(fmt.Sprintf("Testing%d", numMessageSent))
+			numMessageSent++
+		}
+	}()
+	numMessageReceivedCh1 := 0
+	numMessageReceivedCh2 := 0
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+	loop1:
+		for {
+			select {
+			case <-output1:
+				time.Sleep(1000 * time.Millisecond)
+				numMessageReceivedCh1++
+				if numMessageReceivedCh1 >= 10 || numMessageReceivedCh2 >= 10 {
+					break loop1
+				}
+			case <-time.After(4 * time.Second):
+				t.Fatalf("failed slow receiver")
+				t.Logf("Received on 1: %d messages", numMessageReceivedCh1)
+				t.Logf("Received on 2: %d messages", numMessageReceivedCh2)
+				break loop1
+			}
+		}
+		wg.Done()
+	}()
+	go func() {
+	loop2:
+		for {
+			select {
+			case <-output2:
+				time.Sleep(250 * time.Millisecond)
+				numMessageReceivedCh2++
+				if numMessageReceivedCh1 >= 10 || numMessageReceivedCh2 >= 10 {
+					break loop2
+				}
+			case <-time.After(4 * time.Second):
+				t.Fatalf("failed slow receiver")
+				t.Logf("Received on 1: %d messages", numMessageReceivedCh1)
+				t.Logf("Received on 2: %d messages", numMessageReceivedCh2)
+				break loop2
+			}
+		}
+		wg.Done()
+	}()
+	wg.Wait()
+	t.Logf("Sent: %d messages", numMessageSent)
+	t.Logf("Received on 1: %d messages", numMessageReceivedCh1)
+	t.Logf("Received on 2: %d messages", numMessageReceivedCh2)
 
 }
